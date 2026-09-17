@@ -1,0 +1,2101 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>佳林國中萬能標籤套印器 - 所見即所得合併列印系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    body {
+      font-family: 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+    }
+    
+    .code-font {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* 螢幕預覽模擬 A4 畫布 */
+    .a4-preview-page {
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      background-color: white;
+      position: relative;
+      overflow: hidden;
+      box-sizing: border-box;
+      transform-origin: top center;
+      transition: transform 0.2s ease;
+    }
+
+    /* 總版面可視化編輯畫布 */
+    #masterEditorCanvas {
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      background-image: linear-gradient(45deg, #f8fafc 25%, transparent 25%), 
+                        linear-gradient(-45deg, #f8fafc 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, #f8fafc 75%), 
+                        linear-gradient(-45deg, transparent 75%, #f8fafc 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    }
+
+    /* 總版面畫布內的互動元件樣式 */
+    .designer-element {
+      position: absolute;
+      cursor: move;
+      box-sizing: border-box;
+      border: 1px dashed transparent;
+      transition: border-color 0.15s;
+    }
+    .designer-element:hover {
+      border-color: #6366f1;
+    }
+    .designer-element.selected {
+      border: 1.5px solid #4f46e5 !important;
+      outline: 1px solid rgba(79, 70, 229, 0.2);
+    }
+
+    /* 拖曳縮放手柄 */
+    .resize-handle {
+      position: absolute;
+      width: 9px;
+      height: 9px;
+      background-color: #4f46e5;
+      border: 1.5px solid #ffffff;
+      border-radius: 2px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      display: none;
+    }
+    .designer-element.selected .resize-handle {
+      display: block;
+    }
+    .resize-handle.br {
+      bottom: -4px;
+      right: -4px;
+      cursor: nwse-resize;
+    }
+    .resize-handle.tr {
+      top: -4px;
+      right: -4px;
+      cursor: nesw-resize;
+    }
+
+    /* 列印專屬 CSS：精確毫米，去除瀏覽器頁籤多餘邊距 */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 0 !important;
+      }
+      body {
+        background: transparent !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .print-page-container {
+        display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .a4-print-sheet {
+        position: relative !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        page-break-after: always !important;
+        page-break-inside: avoid !important;
+        background: white !important;
+        box-shadow: none !important;
+        overflow: hidden !important;
+      }
+    }
+
+    /* 捲軸美化 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+
+  <header class="no-print bg-slate-900 text-white shadow-md z-30 sticky top-0 px-4 py-3 flex items-center justify-between border-b border-slate-700">
+    <div class="flex items-center space-x-3">
+      <div class="bg-indigo-600 text-white p-2 rounded-lg flex items-center justify-center shadow">
+        <i class="fa-solid fa-tags text-xl"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-tight tracking-wide flex items-center gap-2">
+          佳林國中萬能標籤套印器
+          <span class="bg-indigo-500/30 text-indigo-300 text-xs px-2 py-0.5 rounded-full border border-indigo-400/30">總版面自由設計版</span>
+        </h1>
+        <p class="text-xs text-slate-400">總版面自由編排 • 自由移動縮放 • Excel 合併列印 • 支援校徽圖片上傳</p>
+      </div>
+    </div>
+
+    <!-- 頂端動作列 -->
+    <div class="flex items-center gap-2.5">
+      <button id="btnLoadSample" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3 py-1.5 rounded-md flex items-center gap-1.5 transition">
+        <i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i>
+        <span>載入範例資料</span>
+      </button>
+
+      <button id="btnPrint" class="text-sm bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium px-4 py-1.5 rounded-md shadow flex items-center gap-2 transition">
+        <i class="fa-solid fa-print"></i>
+        <span>立即列印 (Ctrl+P)</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="flex-1 flex flex-col lg:flex-row overflow-hidden no-print">
+
+    <!-- 左側面板：規格設定、總版面設計器與資料庫 -->
+    <aside class="w-full lg:w-[500px] xl:w-[540px] bg-white border-r border-slate-200 flex flex-col h-[calc(100vh-60px)] shadow-sm">
+      
+      <!-- 標籤頁籤切換 -->
+      <div class="flex border-b border-slate-200 bg-slate-50 text-sm font-medium text-slate-600">
+        <button id="tabBtnFormat" class="tab-btn flex-1 py-3 px-2 border-b-2 border-indigo-600 text-indigo-600 font-bold flex items-center justify-center gap-1.5 text-xs sm:text-sm">
+          <i class="fa-solid fa-ruler-combined"></i> 1. 標籤規格
+        </button>
+        <button id="tabBtnDesign" class="tab-btn flex-1 py-3 px-2 border-b-2 border-transparent hover:text-slate-900 flex items-center justify-center gap-1.5 text-xs sm:text-sm">
+          <i class="fa-solid fa-object-group text-indigo-500"></i> 2. 總版面編排
+        </button>
+        <button id="tabBtnData" class="tab-btn flex-1 py-3 px-2 border-b-2 border-transparent hover:text-slate-900 flex items-center justify-center gap-1.5 text-xs sm:text-sm">
+          <i class="fa-solid fa-file-excel"></i> 3. 資料庫 (<span id="dataCountBadge">0</span>)
+        </button>
+      </div>
+
+      <!-- 頁籤內容容器 -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+
+        <!-- ================= 頁籤 1: 標籤規格與紙張版面 ================= -->
+        <div id="tabContentFormat" class="tab-pane space-y-4">
+          
+          <!-- 常用規格快速選單 -->
+          <div class="bg-indigo-50/70 border border-indigo-100 rounded-lg p-3.5">
+            <label class="block text-xs font-bold text-indigo-900 mb-1.5 flex items-center justify-between">
+              <span><i class="fa-solid fa-bookmark text-indigo-500 mr-1"></i> 快速選用常用紙張樣式</span>
+              <span class="text-[11px] text-indigo-600 font-normal">含指定規格</span>
+            </label>
+            <select id="presetSelect" class="w-full bg-white border border-indigo-200 rounded-md py-1.5 px-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <optgroup label="★ 龍德 / Avery 指定常用標籤">
+                <option value="photo_ld862">LD-862-W-A / Avery L7165 (8格: 2欄×4列, 99×67.7mm)</option>
+                <option value="ld810">LD-810-W-A / Avery L7555 (12格: 2欄×6列, 87×42mm)</option>
+                <option value="ld809">LG-809-W-A / LD-809-W-A (14格: 2欄×7列, 105×42.4mm)</option>
+                <option value="ld816">LD-816-W-A / Avery L7163 (14格: 2欄×7列, 99×38.1mm)</option>
+                <option value="ld811">LD-811-W-A / Avery L7162 (16格: 2欄×8列, 99×33.9mm)</option>
+                <option value="ld851">LD-851-W-A (22格: 2欄×11列, 99×24mm)</option>
+              </optgroup>
+              <optgroup label="其他常用規格">
+                <option value="ld814">LD-814 常用發貨名條 (14格: 2欄×7列, 105×42.3mm)</option>
+                <option value="ld818">LD-818 中型標籤 (18格: 3欄×6列, 70×46.6mm)</option>
+                <option value="ld821">LD-821 / Avery L7160 (21格: 3欄×7列, 63.5×38.1mm)</option>
+                <option value="ld824">LD-824 標準名條 (24格: 3欄×8列, 70×37mm)</option>
+                <option value="ld830">LD-830 地址郵寄標籤 (30格: 3欄×10列, 70×29.7mm)</option>
+                <option value="ld844">LD-844 商品條碼標籤 (44格: 4欄×11列, 48.5×25.4mm)</option>
+                <option value="ld865">LD-865 迷你零件標籤 (65格: 5欄×13列, 38.1×21.2mm)</option>
+              </optgroup>
+              <option value="custom">-- 自訂規格參數 (自行手動微調) --</option>
+            </select>
+          </div>
+
+          <!-- 參數調整表格 (mm) -->
+          <div class="border border-slate-200 rounded-lg p-3.5 space-y-3 bg-white">
+            <h3 class="font-bold text-xs text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              <span>標籤詳細幾何參數 (單位: mm)</span>
+              <span class="text-[11px] text-slate-400 font-normal">A4: 210 × 297 mm</span>
+            </h3>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">水平欄數 (Columns)</label>
+                <input type="number" id="cfgCols" min="1" max="10" value="2" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">垂直列數 (Rows)</label>
+                <input type="number" id="cfgRows" min="1" max="30" value="4" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">單張標籤寬度 (mm)</label>
+                <input type="number" id="cfgWidth" step="0.1" value="99.0" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">單張標籤高度 (mm)</label>
+                <input type="number" id="cfgHeight" step="0.1" value="67.7" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">側邊界 (左右邊距 mm)</label>
+                <input type="number" id="cfgMarginLeft" step="0.1" value="4.7" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">上下邊界 (頂底邊距 mm)</label>
+                <input type="number" id="cfgMarginTop" step="0.1" value="13.8" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">標籤水平間距 (mm)</label>
+                <input type="number" id="cfgGapX" step="0.1" value="2.6" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">標籤垂直間距 (mm)</label>
+                <input type="number" id="cfgGapY" step="0.1" value="0.0" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">圓角半徑 (mm)</label>
+                <input type="number" id="cfgRadius" step="0.5" value="2.5" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">單格安全邊距 (mm)</label>
+                <input type="number" id="cfgPadding" step="0.5" value="2.0" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm focus:ring-1 focus:ring-indigo-500">
+              </div>
+            </div>
+          </div>
+
+          <!-- 印表機物理校準與列印輔助 -->
+          <div class="border border-slate-200 rounded-lg p-3.5 space-y-3 bg-white">
+            <h3 class="font-bold text-xs text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              <span>印表機走紙微調校準 (Offset)</span>
+              <span class="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">解決走紙偏位</span>
+            </h3>
+            
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">水平整體位移 (±mm)</label>
+                <input type="number" id="cfgOffsetX" step="0.5" value="0" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm">
+                <span class="text-[10px] text-slate-400">+ 向右 / - 向左</span>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-600 mb-1">垂直整體位移 (±mm)</label>
+                <input type="number" id="cfgOffsetY" step="0.5" value="0" class="w-full border border-slate-300 rounded px-2.5 py-1 text-sm">
+                <span class="text-[10px] text-slate-400">+ 向下 / - 向上</span>
+              </div>
+            </div>
+
+            <!-- 列印選項 -->
+            <div class="pt-2 border-t border-slate-100 flex flex-col gap-2">
+              <label class="inline-flex items-center text-xs text-slate-700 cursor-pointer">
+                <input type="checkbox" id="cfgShowBorder" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mr-2">
+                <span>螢幕顯示標籤邊框輔助線 (列印時不顯示)</span>
+              </label>
+              <label class="inline-flex items-center text-xs text-slate-700 cursor-pointer">
+                <input type="checkbox" id="cfgPrintBorder" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mr-2">
+                <span>列印時印出標籤外框線 (適合無軋刀線白紙裁切)</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 起始位置設定（節省紙張） -->
+          <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-bold text-amber-900"><i class="fa-solid fa-recycle mr-1"></i> 環保省紙：跳過已撕除格子</span>
+              <span class="text-amber-700">起始列印位置</span>
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <input type="number" id="cfgStartCell" min="1" value="1" class="w-20 bg-white border border-amber-300 rounded px-2 py-1 text-center font-bold text-amber-900">
+              <span class="text-slate-600">格（若前幾格已撕走，填寫如第 3 格直接續印）</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================= 頁籤 2: 總版面自由編排 (Master Layout) ================= -->
+        <div id="tabContentDesign" class="tab-pane hidden space-y-4">
+          
+          <!-- 總版面控制頂部與底色設定 -->
+          <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                <i class="fa-solid fa-palette text-indigo-600"></i>
+                <span>總版面底色與全域設定</span>
+              </div>
+              <span class="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 font-medium">即時自動套用到所有標籤</span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-4 text-xs">
+              <div class="flex items-center gap-2">
+                <label class="text-slate-600">標籤底色：</label>
+                <input type="color" id="masterBgColorInput" value="#ffffff" class="w-7 h-7 p-0 border border-slate-300 rounded cursor-pointer">
+                <button id="btnTransparentBg" class="text-[11px] bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 px-2 py-1 rounded">無底色 (白)</button>
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="text-slate-600">邊框裝飾：</label>
+                <select id="masterBorderStyle" class="bg-white border border-slate-300 rounded px-2 py-1 text-xs">
+                  <option value="none">無內框線</option>
+                  <option value="thin-solid">細實線框</option>
+                  <option value="double">雙線古典框</option>
+                  <option value="dashed">虛線邊框</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 工具箱：新增元件與插入上傳圖片 -->
+          <div class="bg-white border border-slate-200 rounded-lg p-3 space-y-2.5 shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs text-slate-700">工具箱：插入元素至總版面</span>
+              <span class="text-[10px] text-slate-400">點擊下方按鈕加入</span>
+            </div>
+            
+            <div class="grid grid-cols-4 gap-1.5">
+              <button id="btnInsertText" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1.5 rounded flex flex-col items-center gap-1 font-medium transition">
+                <i class="fa-solid fa-font text-sm"></i>
+                <span>文字區塊</span>
+              </button>
+              
+              <!-- 插入上傳圖片按鈕 -->
+              <label class="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-1.5 rounded flex flex-col items-center gap-1 font-medium cursor-pointer transition">
+                <i class="fa-solid fa-image text-sm"></i>
+                <span>上傳圖片</span>
+                <input type="file" id="masterImageUploadInput" accept="image/*" class="hidden">
+              </label>
+
+              <button id="btnInsertBarcode" class="text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2 py-1.5 rounded flex flex-col items-center gap-1 font-medium transition">
+                <i class="fa-solid fa-barcode text-sm"></i>
+                <span>一維條碼</span>
+              </button>
+
+              <button id="btnInsertQr" class="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 py-1.5 rounded flex flex-col items-center gap-1 font-medium transition">
+                <i class="fa-solid fa-qrcode text-sm"></i>
+                <span>QR Code</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 可視化總版面畫布 (Master Visual Canvas) -->
+          <div class="border border-slate-300 rounded-lg p-3 bg-slate-100 space-y-2">
+            <div class="flex items-center justify-between text-xs text-slate-600">
+              <span class="font-bold flex items-center gap-1">
+                <i class="fa-solid fa-crosshairs text-indigo-500"></i> 總版面畫布 (拖曳移動 / 右下角拉伸縮放)
+              </span>
+              <span id="masterCanvasDimensionText" class="code-font text-[11px] text-slate-500">99 × 67.7 mm</span>
+            </div>
+
+            <!-- 畫布滾動外框 -->
+            <div class="overflow-auto bg-slate-200 p-3 rounded flex items-center justify-center min-h-[220px]">
+              <!-- 總版面主畫布 (動態依標籤寬高等比縮放呈現) -->
+              <div id="masterEditorCanvas" class="border border-slate-400 rounded transition-all">
+                <!-- 內部將由 JS 動態建立可拖曳、縮放之圖元 -->
+              </div>
+            </div>
+            <p class="text-[11px] text-slate-400 italic">提示：點選畫面中元件可於下方「屬性編輯」微調內容、顏色、底線與大小。</p>
+          </div>
+
+          <!-- 選定元件之屬性編輯器面板 -->
+          <div id="elementPropertyPanel" class="border border-indigo-200 rounded-lg p-3 bg-indigo-50/40 space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                <i class="fa-solid fa-sliders text-indigo-600"></i>
+                <span id="selectedElemTypeTitle">元件屬性編輯 (尚未選取元件)</span>
+              </h4>
+              <button id="btnDeleteSelectedElement" class="text-xs text-rose-500 hover:text-rose-700 font-semibold flex items-center gap-1 hidden">
+                <i class="fa-solid fa-trash-can"></i> 刪除此元件
+              </button>
+            </div>
+
+            <!-- 無選取時提示 -->
+            <div id="noSelectionHint" class="text-xs text-slate-400 py-3 text-center">
+              請在上方總版面畫布中點選任一元件進行文字修改、字級設定、多行編輯或樣式微調。
+            </div>
+
+            <!-- 文字屬性專區 -->
+            <div id="propTextControls" class="space-y-2.5 hidden">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>文字內容 (支援 Enter 換行、空格與 {欄位} 標籤)：</span>
+                  <span class="text-[10px] text-indigo-600 font-normal">多行文字排版</span>
+                </label>
+                <textarea id="propTextInput" rows="3" class="w-full bg-white border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500 whitespace-pre leading-relaxed" placeholder="輸入文字內容，支援按 Enter 換行"></textarea>
+              </div>
+
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                <div>
+                  <label class="block text-[10px] text-slate-500 mb-0.5">文字顏色</label>
+                  <div class="flex items-center gap-1.5">
+                    <input type="color" id="propTextColor" class="w-6 h-6 p-0 border border-slate-300 rounded cursor-pointer">
+                    <span id="propTextColorHex" class="text-[10px] text-slate-500 code-font">#000000</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-[10px] text-slate-500 mb-0.5">字體大小 (pt)</label>
+                  <input type="number" id="propTextSize" min="6" max="72" step="0.5" class="w-full bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs">
+                </div>
+
+                <div>
+                  <label class="block text-[10px] text-slate-500 mb-0.5">樣式效果</label>
+                  <div class="flex items-center gap-2 mt-1">
+                    <label class="text-[11px] text-slate-700 flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" id="propTextBold" class="rounded text-indigo-600"> 粗體
+                    </label>
+                    <label class="text-[11px] text-slate-700 flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" id="propTextUnderline" class="rounded text-indigo-600"> 底線
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-[10px] text-slate-500 mb-0.5">文字對齊</label>
+                  <select id="propTextAlign" class="w-full bg-white border border-slate-300 rounded px-1 py-0.5 text-xs">
+                    <option value="left">靠左</option>
+                    <option value="center">置中</option>
+                    <option value="right">靠右</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 圖片屬性專區 -->
+            <div id="propImageControls" class="space-y-2 hidden text-xs">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 border border-slate-300 rounded overflow-hidden bg-white flex items-center justify-center">
+                  <img id="propImagePreview" src="" class="max-w-full max-h-full object-contain">
+                </div>
+                <div class="flex-1 space-y-1">
+                  <label class="text-slate-600 block">替換此圖片：</label>
+                  <input type="file" id="propImageReplaceInput" accept="image/*" class="text-xs text-slate-500">
+                </div>
+              </div>
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-1 text-slate-700 cursor-pointer">
+                  <input type="checkbox" id="propImageLockRatio" checked class="rounded text-indigo-600"> 保持等比例縮放
+                </label>
+              </div>
+            </div>
+
+            <!-- 條碼 / QR 屬性專區 -->
+            <div id="propCodeControls" class="space-y-2 hidden text-xs">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">編碼內容 (支援變數如 {單號})：</label>
+                <input type="text" id="propCodeField" class="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs code-font">
+              </div>
+              <div id="propBarcodeExtra" class="flex items-center gap-3">
+                <label class="flex items-center gap-1 text-slate-700 cursor-pointer">
+                  <input type="checkbox" id="propBarcodeShowText" checked class="rounded text-indigo-600"> 顯示條碼下方文字
+                </label>
+              </div>
+            </div>
+
+            <!-- 幾何位置數值 (可手動輸入微調毫米) -->
+            <div id="propGeometryRow" class="grid grid-cols-4 gap-2 pt-2 border-t border-indigo-100 hidden">
+              <div>
+                <label class="block text-[10px] text-slate-500">X 座標 (mm)</label>
+                <input type="number" id="propPosX" step="0.5" class="w-full bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs text-center">
+              </div>
+              <div>
+                <label class="block text-[10px] text-slate-500">Y 座標 (mm)</label>
+                <input type="number" id="propPosY" step="0.5" class="w-full bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs text-center">
+              </div>
+              <div>
+                <label class="block text-[10px] text-slate-500">寬度 (mm)</label>
+                <input type="number" id="propWidth" step="0.5" class="w-full bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs text-center">
+              </div>
+              <div>
+                <label class="block text-[10px] text-slate-500">高度 (mm)</label>
+                <input type="number" id="propHeight" step="0.5" class="w-full bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs text-center">
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 可插入之 Excel 欄位變數提示 -->
+          <div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <label class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span><i class="fa-solid fa-code text-indigo-500 mr-1"></i> 可插入之 Excel 欄位標籤</span>
+              <span class="text-[10px] text-slate-400">點擊即可複製到剪貼簿</span>
+            </label>
+            <div id="fieldChipsContainer" class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-1">
+              <span class="text-xs text-slate-400 italic">尚無資料，請先至「資料庫」分頁匯入或載入範例</span>
+            </div>
+          </div>
+
+          <!-- 樣式範本快速套用 -->
+          <div class="flex items-center justify-between pt-1">
+            <span class="font-bold text-xs text-slate-700">內建樣版載入：</span>
+            <div class="flex gap-1.5">
+              <button id="btnTplShipping" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-700 font-medium">學校物流宅配</button>
+              <button id="btnTplAsset" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-700 font-medium">佳林校產QR標籤</button>
+              <button id="btnTplStudent" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-700 font-medium">學生識別證卡</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ================= 頁籤 3: Excel 資料庫 ================= -->
+        <div id="tabContentData" class="tab-pane hidden space-y-4">
+          
+          <!-- 上傳拖曳區 -->
+          <div id="dropZone" class="border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/40 rounded-xl p-6 text-center cursor-pointer transition">
+            <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden">
+            <div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-2 text-xl shadow-sm">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <h3 class="font-bold text-slate-800 text-sm">點擊上傳或拖曳 Excel / CSV 檔案至此</h3>
+            <p class="text-xs text-slate-500 mt-1">支援 .xlsx, .xls, .csv 格式 (首列需為欄位標題)</p>
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-slate-500">
+            <span>目前已載入資料筆數：<strong id="recordCountText" class="text-slate-800 text-sm font-bold">0</strong> 筆</span>
+            <button id="btnClearData" class="text-rose-500 hover:text-rose-700 underline font-medium">清空目前資料</button>
+          </div>
+
+          <!-- 資料表格預覽 -->
+          <div class="border border-slate-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+            <table class="w-full text-left text-xs border-collapse" id="dataTable">
+              <thead class="bg-slate-100 text-slate-600 sticky top-0 border-b border-slate-200" id="dataTableHead">
+                <tr>
+                  <th class="p-2">#</th>
+                  <th class="p-2">狀態</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 text-slate-700" id="dataTableBody">
+                <tr>
+                  <td colspan="2" class="p-4 text-center text-slate-400">尚無資料，請點擊上方按鈕載入範例或上傳 Excel</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- 左側底部狀態 -->
+      <div class="p-3 bg-slate-50 border-t border-slate-200 text-xs flex items-center justify-between text-slate-500">
+        <span id="pageCalculationInfo">預計列印：0 頁 A4 紙</span>
+        <button id="btnResetAll" class="text-slate-400 hover:text-slate-600">重設為原廠設定</button>
+      </div>
+
+    </aside>
+
+    <!-- 右側：A4 所見即所得畫布預覽區域 -->
+    <main class="flex-1 bg-slate-200/80 overflow-auto flex flex-col items-center p-4 relative">
+      
+      <!-- 畫布控制工具列 -->
+      <div class="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border border-slate-300/80 shadow-md rounded-full px-4 py-1.5 flex items-center gap-4 text-xs font-medium text-slate-700 mb-4">
+        <!-- 頁面切換 -->
+        <div class="flex items-center gap-2">
+          <button id="btnPrevPage" class="w-6 h-6 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-600">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <span>第 <span id="curPageNum" class="font-bold text-indigo-600">1</span> / <span id="totalPageNum">1</span> 頁</span>
+          <button id="btnNextPage" class="w-6 h-6 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-600">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+
+        <div class="h-4 w-px bg-slate-300"></div>
+
+        <!-- 縮放比例 -->
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
+          <button id="btnZoomOut" class="w-6 h-6 rounded hover:bg-slate-100 text-slate-600 font-bold">-</button>
+          <span id="zoomLevelText" class="w-12 text-center code-font font-bold">80%</span>
+          <button id="btnZoomIn" class="w-6 h-6 rounded hover:bg-slate-100 text-slate-600 font-bold">+</button>
+          <button id="btnZoomFit" class="text-[11px] bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded text-slate-600">最適</button>
+        </div>
+
+        <div class="h-4 w-px bg-slate-300"></div>
+
+        <!-- 規格快速指示 -->
+        <div class="text-slate-500 hidden sm:inline-block">
+          套印規格：<span id="specSummaryText" class="text-slate-700 font-semibold">LD-862 (99×67.7mm) 8格</span>
+        </div>
+      </div>
+
+      <!-- A4 畫布可縮放視窗外框 -->
+      <div id="previewZoomWrapper" class="transition-transform duration-100 ease-out origin-top mb-12">
+        <!-- 模擬 A4 單頁容器 (精確 210mm x 297mm) -->
+        <div id="a4PreviewCanvas" class="a4-preview-page border border-slate-300 text-slate-900" style="width: 210mm; height: 297mm; min-width: 210mm; min-height: 297mm;">
+          <!-- 內部標籤格數將由 JavaScript 動態以精確 mm 絕對定位繪製，自動同步總版面編排 -->
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- 列印專用容器：觸發 window.print() 時展開為實際多頁 A4 -->
+  <div id="printContainer" class="hidden print-page-container"></div>
+
+  <script>
+    /* =================== 1. 系統規格預設庫與狀態 =================== */
+    const PRESETS = {
+      photo_ld862: {
+        name: "LD-862-W-A / Avery L7165 (8格, 99×67.7mm)",
+        cols: 2,
+        rows: 4,
+        width: 99.0,
+        height: 67.7,
+        marginLeft: 4.7,
+        marginTop: 13.8,
+        gapX: 2.6,
+        gapY: 0.0,
+        radius: 2.5,
+        padding: 2.5
+      },
+      ld810: {
+        name: "LD-810-W-A / Avery L7555 (12格, 87×42mm)",
+        cols: 2,
+        rows: 6,
+        width: 87.0,
+        height: 42.0,
+        marginLeft: 15.0,
+        marginTop: 22.5,
+        gapX: 6.0,
+        gapY: 0.0,
+        radius: 2.0,
+        padding: 2.0
+      },
+      ld809: {
+        name: "LG-809-W-A / LD-809 (14格, 105×42.4mm)",
+        cols: 2,
+        rows: 7,
+        width: 105.0,
+        height: 42.4,
+        marginLeft: 0.0,
+        marginTop: 0.1,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 0.0,
+        padding: 2.0
+      },
+      ld816: {
+        name: "LD-816-W-A / Avery L7163 (14格, 99×38.1mm)",
+        cols: 2,
+        rows: 7,
+        width: 99.0,
+        height: 38.1,
+        marginLeft: 4.7,
+        marginTop: 15.1,
+        gapX: 2.6,
+        gapY: 0.0,
+        radius: 2.0,
+        padding: 2.0
+      },
+      ld811: {
+        name: "LD-811-W-A / Avery L7162 (16格, 99×33.9mm)",
+        cols: 2,
+        rows: 8,
+        width: 99.0,
+        height: 33.9,
+        marginLeft: 4.7,
+        marginTop: 12.9,
+        gapX: 2.6,
+        gapY: 0.0,
+        radius: 2.0,
+        padding: 1.5
+      },
+      ld851: {
+        name: "LD-851-W-A (22格, 99×24mm)",
+        cols: 2,
+        rows: 11,
+        width: 99.0,
+        height: 24.0,
+        marginLeft: 4.7,
+        marginTop: 16.5,
+        gapX: 2.6,
+        gapY: 0.0,
+        radius: 1.5,
+        padding: 1.2
+      },
+      ld814: {
+        name: "LD-814 常用發貨名條 (14格, 105×42.3mm)",
+        cols: 2,
+        rows: 7,
+        width: 105.0,
+        height: 42.3,
+        marginLeft: 0.0,
+        marginTop: 0.5,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 1.0,
+        padding: 2.0
+      },
+      ld818: {
+        name: "LD-818 中型標籤 (18格, 70×46.6mm)",
+        cols: 3,
+        rows: 6,
+        width: 70.0,
+        height: 46.6,
+        marginLeft: 0.0,
+        marginTop: 8.7,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 2.0,
+        padding: 2.0
+      },
+      ld821: {
+        name: "LD-821 / Avery L7160 (21格, 63.5×38.1mm)",
+        cols: 3,
+        rows: 7,
+        width: 63.5,
+        height: 38.1,
+        marginLeft: 7.2,
+        marginTop: 15.1,
+        gapX: 2.5,
+        gapY: 0.0,
+        radius: 2.0,
+        padding: 2.0
+      },
+      ld824: {
+        name: "LD-824 標準名條 (24格, 70×37mm)",
+        cols: 3,
+        rows: 8,
+        width: 70.0,
+        height: 37.0,
+        marginLeft: 0.0,
+        marginTop: 0.5,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 1.5,
+        padding: 1.8
+      },
+      ld830: {
+        name: "LD-830 郵件地址標籤 (30格, 70×29.7mm)",
+        cols: 3,
+        rows: 10,
+        width: 70.0,
+        height: 29.7,
+        marginLeft: 0.0,
+        marginTop: 0.0,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 1.0,
+        padding: 1.5
+      },
+      ld844: {
+        name: "LD-844 商品條碼標籤 (44格, 48.5×25.4mm)",
+        cols: 4,
+        rows: 11,
+        width: 48.5,
+        height: 25.4,
+        marginLeft: 8.0,
+        marginTop: 8.8,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 1.0,
+        padding: 1.2
+      },
+      ld865: {
+        name: "LD-865 迷你零件標籤 (65格, 5欄×13列, 38.1×21.2mm)",
+        cols: 5,
+        rows: 13,
+        width: 38.1,
+        height: 21.2,
+        marginLeft: 9.75,
+        marginTop: 10.7,
+        gapX: 0.0,
+        gapY: 0.0,
+        radius: 1.0,
+        padding: 1.0
+      }
+    };
+
+    // 佳林國中預設校徽 SVG
+    const JIALIN_LOGO_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%234338ca" stroke="%23312e81" stroke-width="4"/><circle cx="50" cy="50" r="38" fill="%23ffffff"/><text x="50" y="44" font-size="14" font-family="Noto Sans TC, sans-serif" font-weight="bold" fill="%231e1b4b" text-anchor="middle">新北市立</text><text x="50" y="64" font-size="18" font-family="Noto Sans TC, sans-serif" font-weight="900" fill="%234338ca" text-anchor="middle">佳林國中</text></svg>`;
+
+    // 全域狀態物件
+    const state = {
+      config: { ...PRESETS.photo_ld862 },
+      offsetX: 0,
+      offsetY: 0,
+      showBorder: true,
+      printBorder: false,
+      startCell: 1,
+      zoom: 0.8,
+      currentPage: 1,
+      totalPages: 1,
+      data: [],
+      fields: [],
+      // 總版面樣式 (Master Label Style)
+      masterStyle: {
+        backgroundColor: '#ffffff',
+        borderStyle: 'none'
+      },
+      // 總版面自由編排之元件列表 (座標均為 mm，以該標籤格左上角為 0,0)
+      masterElements: [
+        {
+          id: 'el_logo',
+          type: 'image',
+          x: 4,
+          y: 4,
+          width: 14,
+          height: 14,
+          src: JIALIN_LOGO_SVG,
+          lockRatio: true
+        },
+        {
+          id: 'el_title',
+          type: 'text',
+          x: 20,
+          y: 4,
+          width: 74,
+          height: 8,
+          text: '新北市立佳林國民中學 總務處',
+          fontSize: 10,
+          bold: true,
+          underline: false,
+          color: '#1e3a8a',
+          align: 'left'
+        },
+        {
+          id: 'el_recipient',
+          type: 'text',
+          x: 20,
+          y: 11,
+          width: 74,
+          height: 16,
+          text: '收件人：{收件人}\n聯絡電話：{電話}',
+          fontSize: 11,
+          bold: true,
+          underline: false,
+          color: '#0f172a',
+          align: 'left'
+        },
+        {
+          id: 'el_address',
+          type: 'text',
+          x: 5,
+          y: 28,
+          width: 89,
+          height: 14,
+          text: '郵遞區號：{郵遞區號}\n收件地址：{地址}',
+          fontSize: 9.5,
+          bold: false,
+          underline: false,
+          color: '#334155',
+          align: 'left'
+        },
+        {
+          id: 'el_barcode',
+          type: 'barcode',
+          x: 6,
+          y: 44,
+          width: 50,
+          height: 18,
+          field: '{單號}',
+          showText: true
+        },
+        {
+          id: 'el_qr',
+          type: 'qr',
+          x: 66,
+          y: 44,
+          width: 19,
+          height: 19,
+          field: '{單號}'
+        }
+      ],
+      selectedElementId: null
+    };
+
+    // 內建範例測試資料
+    const SAMPLE_RECORDS = [
+      { 單號: 'JL-2026-001', 收件人: '林志豪 老師', 電話: '0912-345-678', 郵遞區號: '244', 地址: '新北市林口區文化一路一段100號', 備註: '教務處急件' },
+      { 單號: 'JL-2026-002', 收件人: '陳美玲 組長', 電話: '0928-888-999', 郵遞區號: '244', 地址: '新北市林口區中山路200號', 備註: '學務處代收' },
+      { 單號: 'JL-2026-003', 收件人: '張家豪 主任', 電話: '0933-221-100', 郵遞區號: '100', 地址: '台北市中正區重慶南路一段122號', 備註: '公務文件' },
+      { 單號: 'JL-2026-004', 收件人: '黃淑芬 護理師', 電話: '0955-667-889', 郵遞區號: '330', 地址: '桃園市桃園區縣府路1號', 備註: '健康中心' },
+      { 單號: 'JL-2026-005', 收件人: '王偉哲 老師', 電話: '0988-123-456', 郵遞區號: '220', 地址: '新北市板橋區中山路一段161號', 備註: '輔導室專用' },
+      { 單號: 'JL-2026-006', 收件人: '李佩君 小姐', 電話: '0970-554-321', 郵遞區號: '244', 地址: '新北市林口區忠孝路50號', 備註: '家長會' },
+      { 單號: 'JL-2026-007', 收件人: '周俊吉 技士', 電話: '0919-445-566', 郵遞區號: '244', 地址: '新北市林口區佳林路100號', 備註: '資訊設備' },
+      { 單號: 'JL-2026-008', 收件人: '吳雅婷 幹事', 電話: '0966-332-211', 郵遞區號: '244', 地址: '新北市林口區仁愛路一段2號', 備註: '總務處出納' }
+    ];
+
+    /* =================== 2. 初始化與事件綁定 =================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      loadDataRecords(SAMPLE_RECORDS);
+      setupTabSwitching();
+      setupFormatInputs();
+      setupMasterEditor();
+      setupPropertyPanel();
+      setupExcelImporter();
+      setupZoomAndNavigation();
+      calculateTotalPages();
+      renderMasterEditor();
+      renderPreview();
+    });
+
+    function setupTabSwitching() {
+      const tabs = [
+        { btn: 'tabBtnFormat', content: 'tabContentFormat' },
+        { btn: 'tabBtnDesign', content: 'tabContentDesign' },
+        { btn: 'tabBtnData', content: 'tabContentData' }
+      ];
+
+      tabs.forEach(tab => {
+        const btnElem = document.getElementById(tab.btn);
+        btnElem.addEventListener('click', () => {
+          tabs.forEach(t => {
+            const b = document.getElementById(t.btn);
+            const c = document.getElementById(t.content);
+            if (t.btn === tab.btn) {
+              b.className = 'tab-btn flex-1 py-3 px-2 border-b-2 border-indigo-600 text-indigo-600 font-bold flex items-center justify-center gap-1.5 text-xs sm:text-sm';
+              c.classList.remove('hidden');
+              if (tab.btn === 'tabBtnDesign') {
+                renderMasterEditor();
+              }
+            } else {
+              b.className = 'tab-btn flex-1 py-3 px-2 border-b-2 border-transparent hover:text-slate-900 flex items-center justify-center gap-1.5 text-slate-500 text-xs sm:text-sm';
+              c.classList.add('hidden');
+            }
+          });
+        });
+      });
+    }
+
+    function setupFormatInputs() {
+      const presetSelect = document.getElementById('presetSelect');
+      presetSelect.addEventListener('change', (e) => {
+        const key = e.target.value;
+        if (key !== 'custom' && PRESETS[key]) {
+          state.config = { ...PRESETS[key] };
+          syncConfigInputsFromState();
+          document.getElementById('specSummaryText').innerText = PRESETS[key].name;
+          calculateTotalPages();
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      const inputs = [
+        'cfgCols', 'cfgRows', 'cfgWidth', 'cfgHeight',
+        'cfgMarginLeft', 'cfgMarginTop', 'cfgGapX', 'cfgGapY',
+        'cfgRadius', 'cfgPadding', 'cfgOffsetX', 'cfgOffsetY',
+        'cfgStartCell'
+      ];
+
+      inputs.forEach(id => {
+        const el = document.getElementById(id);
+        el.addEventListener('input', () => {
+          readInputsToState();
+          document.getElementById('presetSelect').value = 'custom';
+          document.getElementById('specSummaryText').innerText = `自訂 (${state.config.width}×${state.config.height}mm) ${state.config.cols * state.config.rows}格`;
+          calculateTotalPages();
+          renderMasterEditor();
+          renderPreview();
+        });
+      });
+
+      document.getElementById('cfgShowBorder').addEventListener('change', (e) => {
+        state.showBorder = e.target.checked;
+        renderPreview();
+      });
+      document.getElementById('cfgPrintBorder').addEventListener('change', (e) => {
+        state.printBorder = e.target.checked;
+      });
+
+      document.getElementById('btnResetAll').addEventListener('click', () => {
+        state.config = { ...PRESETS.photo_ld862 };
+        state.offsetX = 0;
+        state.offsetY = 0;
+        state.startCell = 1;
+        document.getElementById('presetSelect').value = 'photo_ld862';
+        syncConfigInputsFromState();
+        calculateTotalPages();
+        renderMasterEditor();
+        renderPreview();
+      });
+    }
+
+    function syncConfigInputsFromState() {
+      document.getElementById('cfgCols').value = state.config.cols;
+      document.getElementById('cfgRows').value = state.config.rows;
+      document.getElementById('cfgWidth').value = state.config.width;
+      document.getElementById('cfgHeight').value = state.config.height;
+      document.getElementById('cfgMarginLeft').value = state.config.marginLeft;
+      document.getElementById('cfgMarginTop').value = state.config.marginTop;
+      document.getElementById('cfgGapX').value = state.config.gapX;
+      document.getElementById('cfgGapY').value = state.config.gapY;
+      document.getElementById('cfgRadius').value = state.config.radius;
+      document.getElementById('cfgPadding').value = state.config.padding;
+      document.getElementById('cfgOffsetX').value = state.offsetX;
+      document.getElementById('cfgOffsetY').value = state.offsetY;
+      document.getElementById('cfgStartCell').value = state.startCell;
+    }
+
+    function readInputsToState() {
+      state.config.cols = parseInt(document.getElementById('cfgCols').value) || 1;
+      state.config.rows = parseInt(document.getElementById('cfgRows').value) || 1;
+      state.config.width = parseFloat(document.getElementById('cfgWidth').value) || 10;
+      state.config.height = parseFloat(document.getElementById('cfgHeight').value) || 10;
+      state.config.marginLeft = parseFloat(document.getElementById('cfgMarginLeft').value) || 0;
+      state.config.marginTop = parseFloat(document.getElementById('cfgMarginTop').value) || 0;
+      state.config.gapX = parseFloat(document.getElementById('cfgGapX').value) || 0;
+      state.config.gapY = parseFloat(document.getElementById('cfgGapY').value) || 0;
+      state.config.radius = parseFloat(document.getElementById('cfgRadius').value) || 0;
+      state.config.padding = parseFloat(document.getElementById('cfgPadding').value) || 0;
+      state.offsetX = parseFloat(document.getElementById('cfgOffsetX').value) || 0;
+      state.offsetY = parseFloat(document.getElementById('cfgOffsetY').value) || 0;
+      state.startCell = parseInt(document.getElementById('cfgStartCell').value) || 1;
+    }
+
+    /* =================== 3. 總版面可視化編排器邏輯 =================== */
+    // 編輯器畫布縮放比例：1mm = 3.6px，便於高精確度滑鼠拖曳
+    const MM_TO_PX = 3.6;
+
+    function setupMasterEditor() {
+      // 總版面背景色
+      const bgInput = document.getElementById('masterBgColorInput');
+      bgInput.addEventListener('input', (e) => {
+        state.masterStyle.backgroundColor = e.target.value;
+        renderMasterEditor();
+        renderPreview();
+      });
+
+      document.getElementById('btnTransparentBg').addEventListener('click', () => {
+        state.masterStyle.backgroundColor = '#ffffff';
+        bgInput.value = '#ffffff';
+        renderMasterEditor();
+        renderPreview();
+      });
+
+      // 總版面邊框裝飾
+      document.getElementById('masterBorderStyle').addEventListener('change', (e) => {
+        state.masterStyle.borderStyle = e.target.value;
+        renderMasterEditor();
+        renderPreview();
+      });
+
+      // 新增文字元件
+      document.getElementById('btnInsertText').addEventListener('click', () => {
+        const newEl = {
+          id: 'text_' + Date.now(),
+          type: 'text',
+          x: 4,
+          y: 4,
+          width: 50,
+          height: 12,
+          text: '請在此輸入文字\n支援換行與空格',
+          fontSize: 10,
+          bold: false,
+          underline: false,
+          color: '#1e293b',
+          align: 'left'
+        };
+        state.masterElements.push(newEl);
+        state.selectedElementId = newEl.id;
+        renderMasterEditor();
+        updatePropertyPanel();
+        renderPreview();
+      });
+
+      // 上傳圖片元件
+      document.getElementById('masterImageUploadInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const newEl = {
+            id: 'img_' + Date.now(),
+            type: 'image',
+            x: 5,
+            y: 5,
+            width: 18,
+            height: 18,
+            src: evt.target.result,
+            lockRatio: true
+          };
+          state.masterElements.push(newEl);
+          state.selectedElementId = newEl.id;
+          renderMasterEditor();
+          updatePropertyPanel();
+          renderPreview();
+          showNotice('成功插入上傳圖片！', 'success');
+        };
+        reader.readAsDataURL(file);
+        e.target.value = ''; // 重設 input
+      });
+
+      // 新增一維條碼
+      document.getElementById('btnInsertBarcode').addEventListener('click', () => {
+        const newEl = {
+          id: 'bc_' + Date.now(),
+          type: 'barcode',
+          x: 6,
+          y: 20,
+          width: 48,
+          height: 18,
+          field: state.fields.length > 0 ? `{${state.fields[0]}}` : '{單號}',
+          showText: true
+        };
+        state.masterElements.push(newEl);
+        state.selectedElementId = newEl.id;
+        renderMasterEditor();
+        updatePropertyPanel();
+        renderPreview();
+      });
+
+      // 新增 QR Code
+      document.getElementById('btnInsertQr').addEventListener('click', () => {
+        const newEl = {
+          id: 'qr_' + Date.now(),
+          type: 'qr',
+          x: 20,
+          y: 20,
+          width: 20,
+          height: 20,
+          field: state.fields.length > 0 ? `{${state.fields[0]}}` : '{單號}'
+        };
+        state.masterElements.push(newEl);
+        state.selectedElementId = newEl.id;
+        renderMasterEditor();
+        updatePropertyPanel();
+        renderPreview();
+      });
+
+      // 總版面快速範本套用
+      document.getElementById('btnTplShipping').addEventListener('click', () => {
+        applyTemplatePreset('shipping');
+      });
+      document.getElementById('btnTplAsset').addEventListener('click', () => {
+        applyTemplatePreset('asset');
+      });
+      document.getElementById('btnTplStudent').addEventListener('click', () => {
+        applyTemplatePreset('student');
+      });
+    }
+
+    function applyTemplatePreset(type) {
+      if (type === 'shipping') {
+        state.masterStyle.backgroundColor = '#ffffff';
+        state.masterStyle.borderStyle = 'none';
+        state.masterElements = [
+          { id: 'el_logo', type: 'image', x: 4, y: 4, width: 14, height: 14, src: JIALIN_LOGO_SVG, lockRatio: true },
+          { id: 'el_title', type: 'text', x: 20, y: 4, width: 74, height: 8, text: '新北市立佳林國民中學 總務處', fontSize: 10, bold: true, underline: false, color: '#1e3a8a', align: 'left' },
+          { id: 'el_recipient', type: 'text', x: 20, y: 11, width: 74, height: 16, text: '收件人：{收件人}\n聯絡電話：{電話}', fontSize: 11, bold: true, underline: false, color: '#0f172a', align: 'left' },
+          { id: 'el_address', type: 'text', x: 5, y: 28, width: 89, height: 14, text: '郵遞區號：{郵遞區號}\n收件地址：{地址}', fontSize: 9.5, bold: false, underline: false, color: '#334155', align: 'left' },
+          { id: 'el_barcode', type: 'barcode', x: 6, y: 44, width: 50, height: 18, field: '{單號}', showText: true },
+          { id: 'el_qr', type: 'qr', x: 66, y: 44, width: 19, height: 19, field: '{單號}' }
+        ];
+      } else if (type === 'asset') {
+        state.masterStyle.backgroundColor = '#f8fafc';
+        state.masterStyle.borderStyle = 'thin-solid';
+        state.masterElements = [
+          { id: 'el_title', type: 'text', x: 4, y: 3, width: 91, height: 8, text: '佳林國中 公物資產財產標籤', fontSize: 12, bold: true, underline: true, color: '#1e1b4b', align: 'center' },
+          { id: 'el_asset_num', type: 'text', x: 6, y: 14, width: 56, height: 14, text: '財產條碼：{單號}\n保管人：{收件人}\n放置地點：電腦教室二', fontSize: 9.5, bold: false, underline: false, color: '#1e293b', align: 'left' },
+          { id: 'el_qr', type: 'qr', x: 68, y: 14, width: 22, height: 22, field: 'https://jljh.ntpc.edu.tw/asset/{單號}' },
+          { id: 'el_barcode', type: 'barcode', x: 6, y: 34, width: 87, height: 20, field: '{單號}', showText: true },
+          { id: 'el_footer', type: 'text', x: 4, y: 58, width: 91, height: 6, text: '※ 依校產管理要點妥善保管，未經許可切勿撕毀或移轉', fontSize: 8, bold: false, underline: false, color: '#64748b', align: 'center' }
+        ];
+      } else if (type === 'student') {
+        state.masterStyle.backgroundColor = '#eff6ff';
+        state.masterStyle.borderStyle = 'double';
+        state.masterElements = [
+          { id: 'el_logo', type: 'image', x: 4, y: 4, width: 15, height: 15, src: JIALIN_LOGO_SVG, lockRatio: true },
+          { id: 'el_title', type: 'text', x: 22, y: 4, width: 72, height: 8, text: '佳林國中 學生通行證', fontSize: 11, bold: true, underline: false, color: '#1e3a8a', align: 'left' },
+          { id: 'el_sub', type: 'text', x: 22, y: 12, width: 72, height: 8, text: '姓名：{收件人}', fontSize: 12, bold: true, underline: true, color: '#0f172a', align: 'left' },
+          { id: 'el_info', type: 'text', x: 6, y: 24, width: 56, height: 16, text: '學號代碼：{單號}\n班級導師：{備註}', fontSize: 10, bold: false, underline: false, color: '#334155', align: 'left' },
+          { id: 'el_qr', type: 'qr', x: 66, y: 22, width: 24, height: 24, field: '{單號}' },
+          { id: 'el_barcode', type: 'barcode', x: 10, y: 44, width: 79, height: 18, field: '{單號}', showText: true }
+        ];
+      }
+      state.selectedElementId = null;
+      document.getElementById('masterBgColorInput').value = state.masterStyle.backgroundColor;
+      document.getElementById('masterBorderStyle').value = state.masterStyle.borderStyle;
+      renderMasterEditor();
+      updatePropertyPanel();
+      renderPreview();
+    }
+
+    function renderMasterEditor() {
+      const editor = document.getElementById('masterEditorCanvas');
+      if (!editor) return;
+
+      const { width, height, radius } = state.config;
+      document.getElementById('masterCanvasDimensionText').innerText = `${width} × ${height} mm`;
+
+      // 換算為畫布實際畫素
+      const canvasPxW = width * MM_TO_PX;
+      const canvasPxH = height * MM_TO_PX;
+
+      editor.style.width = `${canvasPxW}px`;
+      editor.style.height = `${canvasPxH}px`;
+      editor.style.borderRadius = `${radius * MM_TO_PX * 0.4}px`;
+      editor.style.backgroundColor = state.masterStyle.backgroundColor;
+
+      // 裝飾邊框
+      if (state.masterStyle.borderStyle === 'thin-solid') {
+        editor.style.boxShadow = 'inset 0 0 0 1px #94a3b8';
+      } else if (state.masterStyle.borderStyle === 'double') {
+        editor.style.boxShadow = 'inset 0 0 0 3px #cbd5e1, inset 0 0 0 4px #475569';
+      } else if (state.masterStyle.borderStyle === 'dashed') {
+        editor.style.boxShadow = 'none';
+        editor.style.border = '1px dashed #64748b';
+      } else {
+        editor.style.boxShadow = 'none';
+        editor.style.border = '1px solid #cbd5e1';
+      }
+
+      editor.innerHTML = '';
+
+      // 點擊空白處取消選取
+      editor.onmousedown = (e) => {
+        if (e.target === editor) {
+          state.selectedElementId = null;
+          document.querySelectorAll('.designer-element').forEach(el => el.classList.remove('selected'));
+          updatePropertyPanel();
+        }
+      };
+
+      // 繪製各可移動元件
+      state.masterElements.forEach(el => {
+        const dom = document.createElement('div');
+        dom.className = `designer-element ${state.selectedElementId === el.id ? 'selected' : ''}`;
+        dom.id = `master_el_${el.id}`;
+        dom.style.left = `${el.x * MM_TO_PX}px`;
+        dom.style.top = `${el.y * MM_TO_PX}px`;
+        dom.style.width = `${el.width * MM_TO_PX}px`;
+        dom.style.height = `${el.height * MM_TO_PX}px`;
+
+        // 縮放控制握把 (底右)
+        const brHandle = document.createElement('div');
+        brHandle.className = 'resize-handle br';
+        dom.appendChild(brHandle);
+
+        // 內部內容渲染
+        const innerContent = document.createElement('div');
+        innerContent.className = 'w-full h-full overflow-hidden pointer-events-none select-none';
+
+        if (el.type === 'text') {
+          innerContent.style.fontSize = `${el.fontSize * 1.33}px`;
+          innerContent.style.fontWeight = el.bold ? '700' : '400';
+          innerContent.style.textDecoration = el.underline ? 'underline' : 'none';
+          innerContent.style.color = el.color || '#000000';
+          innerContent.style.textAlign = el.align || 'left';
+          innerContent.style.whiteSpace = 'pre-wrap';
+          innerContent.style.lineHeight = '1.3';
+          innerContent.innerText = el.text;
+        } else if (el.type === 'image') {
+          const img = document.createElement('img');
+          img.src = el.src;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = el.lockRatio ? 'contain' : 'fill';
+          innerContent.appendChild(img);
+        } else if (el.type === 'barcode') {
+          innerContent.className = 'w-full h-full flex flex-col items-center justify-center pointer-events-none select-none bg-slate-50/70 border border-slate-300 rounded p-0.5';
+          innerContent.innerHTML = `
+            <div class="flex items-center gap-1 text-[9px] text-slate-700 font-mono font-bold">
+              <i class="fa-solid fa-barcode text-indigo-600"></i> ${escapeHtml(el.field)}
+            </div>
+            <div class="h-2 w-5/6 bg-slate-800 my-0.5" style="background-image: repeating-linear-gradient(90deg, #000 0px, #000 2px, transparent 2px, transparent 4px);"></div>
+          `;
+        } else if (el.type === 'qr') {
+          innerContent.className = 'w-full h-full flex flex-col items-center justify-center pointer-events-none select-none bg-slate-50/70 border border-slate-300 rounded p-1';
+          innerContent.innerHTML = `
+            <i class="fa-solid fa-qrcode text-indigo-600 text-lg"></i>
+            <span class="text-[8px] text-slate-500 font-mono truncate max-w-full">${escapeHtml(el.field)}</span>
+          `;
+        }
+
+        dom.appendChild(innerContent);
+
+        // 綁定拖曳移動與選取
+        bindElementInteractions(dom, el, brHandle);
+
+        editor.appendChild(dom);
+      });
+    }
+
+    // 綁定拖曳與縮放互動事件
+    function bindElementInteractions(dom, el, brHandle) {
+      dom.addEventListener('mousedown', (e) => {
+        if (e.target === brHandle) return; // 避免觸發拖曳
+        e.stopPropagation();
+        state.selectedElementId = el.id;
+        document.querySelectorAll('.designer-element').forEach(item => item.classList.remove('selected'));
+        dom.classList.add('selected');
+        updatePropertyPanel();
+
+        let startX = e.clientX;
+        let startY = e.clientY;
+        let initialX = el.x;
+        let initialY = el.y;
+
+        const onMouseMove = (moveEvent) => {
+          const deltaX = (moveEvent.clientX - startX) / MM_TO_PX;
+          const deltaY = (moveEvent.clientY - startY) / MM_TO_PX;
+
+          el.x = Math.max(0, Math.round((initialX + deltaX) * 2) / 2);
+          el.y = Math.max(0, Math.round((initialY + deltaY) * 2) / 2);
+
+          dom.style.left = `${el.x * MM_TO_PX}px`;
+          dom.style.top = `${el.y * MM_TO_PX}px`;
+
+          // 同步幾何座標欄位
+          syncGeometryInputs();
+          // 即時更新 A4 所有標籤
+          renderPreview();
+        };
+
+        const onMouseUp = () => {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+
+      // 右下角縮放拖曳
+      brHandle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        let startX = e.clientX;
+        let startY = e.clientY;
+        let initialW = el.width;
+        let initialH = el.height;
+        let ratio = initialW / initialH;
+
+        const onMouseMove = (moveEvent) => {
+          let deltaW = (moveEvent.clientX - startX) / MM_TO_PX;
+          let deltaH = (moveEvent.clientY - startY) / MM_TO_PX;
+
+          let newW = Math.max(5, Math.round((initialW + deltaW) * 2) / 2);
+          let newH = Math.max(4, Math.round((initialH + deltaH) * 2) / 2);
+
+          if (el.type === 'image' && el.lockRatio) {
+            newH = newW / ratio;
+          }
+
+          el.width = newW;
+          el.height = newH;
+
+          dom.style.width = `${el.width * MM_TO_PX}px`;
+          dom.style.height = `${el.height * MM_TO_PX}px`;
+
+          syncGeometryInputs();
+          renderPreview();
+        };
+
+        const onMouseUp = () => {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+    }
+
+    /* =================== 4. 元件屬性編輯面板控制 =================== */
+    function setupPropertyPanel() {
+      // 刪除按鈕
+      document.getElementById('btnDeleteSelectedElement').addEventListener('click', () => {
+        if (!state.selectedElementId) return;
+        state.masterElements = state.masterElements.filter(el => el.id !== state.selectedElementId);
+        state.selectedElementId = null;
+        renderMasterEditor();
+        updatePropertyPanel();
+        renderPreview();
+      });
+
+      // 文字內容與多行
+      const propTextInput = document.getElementById('propTextInput');
+      propTextInput.addEventListener('input', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.text = e.target.value;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 文字顏色
+      const propTextColor = document.getElementById('propTextColor');
+      propTextColor.addEventListener('input', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.color = e.target.value;
+          document.getElementById('propTextColorHex').innerText = e.target.value;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 文字大小
+      document.getElementById('propTextSize').addEventListener('input', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.fontSize = parseFloat(e.target.value) || 10;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 文字粗體
+      document.getElementById('propTextBold').addEventListener('change', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.bold = e.target.checked;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 文字底線 (Underline)
+      document.getElementById('propTextUnderline').addEventListener('change', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.underline = e.target.checked;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 文字對齊
+      document.getElementById('propTextAlign').addEventListener('change', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.align = e.target.value;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 替換圖片
+      document.getElementById('propImageReplaceInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        const el = getSelectedElement();
+        if (file && el && el.type === 'image') {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            el.src = evt.target.result;
+            document.getElementById('propImagePreview').src = el.src;
+            renderMasterEditor();
+            renderPreview();
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+
+      // 鎖定圖片比例
+      document.getElementById('propImageLockRatio').addEventListener('change', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'image') {
+          el.lockRatio = e.target.checked;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 條碼與 QR Code 內容欄位
+      document.getElementById('propCodeField').addEventListener('input', (e) => {
+        const el = getSelectedElement();
+        if (el && (el.type === 'barcode' || el.type === 'qr')) {
+          el.field = e.target.value;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      document.getElementById('propBarcodeShowText').addEventListener('change', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'barcode') {
+          el.showText = e.target.checked;
+          renderPreview();
+        }
+      });
+
+      // 手動輸入幾何數值
+      ['propPosX', 'propPosY', 'propWidth', 'propHeight'].forEach(id => {
+        document.getElementById(id).addEventListener('input', () => {
+          const el = getSelectedElement();
+          if (!el) return;
+          el.x = parseFloat(document.getElementById('propPosX').value) || 0;
+          el.y = parseFloat(document.getElementById('propPosY').value) || 0;
+          el.width = parseFloat(document.getElementById('propWidth').value) || 10;
+          el.height = parseFloat(document.getElementById('propHeight').value) || 10;
+          renderMasterEditor();
+          renderPreview();
+        });
+      });
+    }
+
+    function getSelectedElement() {
+      if (!state.selectedElementId) return null;
+      return state.masterElements.find(el => el.id === state.selectedElementId);
+    }
+
+    function updatePropertyPanel() {
+      const el = getSelectedElement();
+      const panelHint = document.getElementById('noSelectionHint');
+      const deleteBtn = document.getElementById('btnDeleteSelectedElement');
+      const titleSpan = document.getElementById('selectedElemTypeTitle');
+      const textGroup = document.getElementById('propTextControls');
+      const imgGroup = document.getElementById('propImageControls');
+      const codeGroup = document.getElementById('propCodeControls');
+      const geoRow = document.getElementById('propGeometryRow');
+
+      if (!el) {
+        panelHint.classList.remove('hidden');
+        deleteBtn.classList.add('hidden');
+        titleSpan.innerText = '元件屬性編輯 (尚未選取元件)';
+        textGroup.classList.add('hidden');
+        imgGroup.classList.add('hidden');
+        codeGroup.classList.add('hidden');
+        geoRow.classList.add('hidden');
+        return;
+      }
+
+      panelHint.classList.add('hidden');
+      deleteBtn.classList.remove('hidden');
+      geoRow.classList.remove('hidden');
+      syncGeometryInputs();
+
+      if (el.type === 'text') {
+        titleSpan.innerText = '編輯：文字區塊';
+        textGroup.classList.remove('hidden');
+        imgGroup.classList.add('hidden');
+        codeGroup.classList.add('hidden');
+
+        document.getElementById('propTextInput').value = el.text;
+        document.getElementById('propTextColor').value = el.color || '#000000';
+        document.getElementById('propTextColorHex').innerText = el.color || '#000000';
+        document.getElementById('propTextSize').value = el.fontSize;
+        document.getElementById('propTextBold').checked = !!el.bold;
+        document.getElementById('propTextUnderline').checked = !!el.underline;
+        document.getElementById('propTextAlign').value = el.align || 'left';
+      } else if (el.type === 'image') {
+        titleSpan.innerText = '編輯：插入圖片';
+        textGroup.classList.add('hidden');
+        imgGroup.classList.remove('hidden');
+        codeGroup.classList.add('hidden');
+
+        document.getElementById('propImagePreview').src = el.src;
+        document.getElementById('propImageLockRatio').checked = !!el.lockRatio;
+      } else if (el.type === 'barcode' || el.type === 'qr') {
+        titleSpan.innerText = el.type === 'barcode' ? '編輯：一維條碼' : '編輯：二維 QR 碼';
+        textGroup.classList.add('hidden');
+        imgGroup.classList.add('hidden');
+        codeGroup.classList.remove('hidden');
+
+        document.getElementById('propCodeField').value = el.field;
+        const bcExtra = document.getElementById('propBarcodeExtra');
+        if (el.type === 'barcode') {
+          bcExtra.classList.remove('hidden');
+          document.getElementById('propBarcodeShowText').checked = el.showText !== false;
+        } else {
+          bcExtra.classList.add('hidden');
+        }
+      }
+    }
+
+    function syncGeometryInputs() {
+      const el = getSelectedElement();
+      if (!el) return;
+      document.getElementById('propPosX').value = el.x;
+      document.getElementById('propPosY').value = el.y;
+      document.getElementById('propWidth').value = el.width;
+      document.getElementById('propHeight').value = el.height;
+    }
+
+    /* =================== 5. Excel 資料庫匯入與解析 =================== */
+    function setupExcelImporter() {
+      const dropZone = document.getElementById('dropZone');
+      const fileInput = document.getElementById('excelFileInput');
+
+      dropZone.addEventListener('click', () => fileInput.click());
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-indigo-600', 'bg-indigo-100/50');
+      });
+
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-indigo-600', 'bg-indigo-100/50');
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-indigo-600', 'bg-indigo-100/50');
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          handleFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleFile(e.target.files[0]);
+        }
+      });
+
+      document.getElementById('btnLoadSample').addEventListener('click', () => {
+        loadDataRecords(SAMPLE_RECORDS);
+        showNotice('已載入 8 筆佳林國中測試資料！', 'info');
+      });
+
+      document.getElementById('btnClearData').addEventListener('click', () => {
+        state.data = [];
+        state.fields = [];
+        updateDataViews();
+        calculateTotalPages();
+        renderPreview();
+        showNotice('資料庫已清空', 'info');
+      });
+    }
+
+    function handleFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+          if (!json || json.length === 0) {
+            showNotice('此試算表檔案內沒有偵測到資料列！', 'error');
+            return;
+          }
+
+          loadDataRecords(json);
+          showNotice(`成功匯入 ${json.length} 筆資料！`, 'success');
+        } catch (err) {
+          console.error(err);
+          showNotice('解析 Excel 失敗，請確認檔案格式是否正確。', 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function loadDataRecords(records) {
+      state.data = records;
+      if (records.length > 0) {
+        state.fields = Object.keys(records[0]);
+      } else {
+        state.fields = [];
+      }
+      updateDataViews();
+      calculateTotalPages();
+      renderPreview();
+    }
+
+    function updateDataViews() {
+      const chipsContainer = document.getElementById('fieldChipsContainer');
+      chipsContainer.innerHTML = '';
+      if (state.fields.length === 0) {
+        chipsContainer.innerHTML = '<span class="text-xs text-slate-400 italic">尚無欄位變數</span>';
+      } else {
+        state.fields.forEach(field => {
+          const btn = document.createElement('button');
+          btn.className = 'text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded font-mono transition';
+          btn.innerText = `{${field}}`;
+          btn.title = '點擊複製';
+          btn.addEventListener('click', () => {
+            copyTextToClipboard(`{${field}}`);
+            showNotice(`已複製標籤 {${field}} 到剪貼簿`, 'info');
+          });
+          chipsContainer.appendChild(btn);
+        });
+      }
+
+      document.getElementById('dataCountBadge').innerText = state.data.length;
+      document.getElementById('recordCountText').innerText = state.data.length;
+
+      const thead = document.getElementById('dataTableHead');
+      const tbody = document.getElementById('dataTableBody');
+
+      if (state.data.length === 0) {
+        thead.innerHTML = '<tr><th class="p-2">#</th><th class="p-2">狀態</th></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" class="p-4 text-center text-slate-400">尚無資料</td></tr>';
+        return;
+      }
+
+      let thHtml = '<tr class="bg-slate-100 border-b border-slate-200"><th class="p-2 w-10 text-slate-500">#</th>';
+      state.fields.forEach(f => {
+        thHtml += `<th class="p-2 text-slate-700 whitespace-nowrap font-semibold">${escapeHtml(f)}</th>`;
+      });
+      thHtml += '</tr>';
+      thead.innerHTML = thHtml;
+
+      let tbHtml = '';
+      const showRows = state.data.slice(0, 50);
+      showRows.forEach((row, idx) => {
+        tbHtml += `<tr class="hover:bg-indigo-50/50"><td class="p-2 text-slate-400 font-mono">${idx + 1}</td>`;
+        state.fields.forEach(f => {
+          tbHtml += `<td class="p-2 text-slate-600 whitespace-nowrap">${escapeHtml(String(row[f] || ''))}</td>`;
+        });
+        tbHtml += '</tr>';
+      });
+
+      if (state.data.length > 50) {
+        tbHtml += `<tr><td colspan="${state.fields.length + 1}" class="p-2 text-center text-slate-400 bg-slate-50">... 尚有 ${state.data.length - 50} 筆未列出</td></tr>`;
+      }
+      tbody.innerHTML = tbHtml;
+    }
+
+    /* =================== 6. A4 畫布所見即所得渲染與自動套用 =================== */
+    function calculateTotalPages() {
+      const cellsPerPage = state.config.cols * state.config.rows;
+      if (cellsPerPage <= 0) return;
+
+      const totalItems = state.data.length;
+      const startOffset = Math.max(0, state.startCell - 1);
+
+      if (totalItems === 0) {
+        state.totalPages = 1;
+      } else {
+        state.totalPages = Math.ceil((totalItems + startOffset) / cellsPerPage);
+      }
+
+      if (state.currentPage > state.totalPages) {
+        state.currentPage = state.totalPages;
+      }
+
+      document.getElementById('curPageNum').innerText = state.currentPage;
+      document.getElementById('totalPageNum').innerText = state.totalPages;
+      document.getElementById('pageCalculationInfo').innerText = `每頁 ${cellsPerPage} 格 • 共 ${totalItems} 筆資料 • 預計列印：${state.totalPages} 頁 A4`;
+    }
+
+    function setupZoomAndNavigation() {
+      const zoomWrapper = document.getElementById('previewZoomWrapper');
+      const zoomText = document.getElementById('zoomLevelText');
+
+      const applyZoom = (z) => {
+        state.zoom = Math.min(Math.max(0.3, z), 2.0);
+        zoomWrapper.style.transform = `scale(${state.zoom})`;
+        zoomText.innerText = `${Math.round(state.zoom * 100)}%`;
+      };
+
+      document.getElementById('btnZoomIn').addEventListener('click', () => applyZoom(state.zoom + 0.1));
+      document.getElementById('btnZoomOut').addEventListener('click', () => applyZoom(state.zoom - 0.1));
+      document.getElementById('btnZoomFit').addEventListener('click', () => {
+        const parentW = zoomWrapper.parentElement.clientWidth - 40;
+        const a4Px = 794;
+        applyZoom(parentW / a4Px);
+      });
+
+      document.getElementById('btnPrevPage').addEventListener('click', () => {
+        if (state.currentPage > 1) {
+          state.currentPage--;
+          document.getElementById('curPageNum').innerText = state.currentPage;
+          renderPreview();
+        }
+      });
+      document.getElementById('btnNextPage').addEventListener('click', () => {
+        if (state.currentPage < state.totalPages) {
+          state.currentPage++;
+          document.getElementById('curPageNum').innerText = state.currentPage;
+          renderPreview();
+        }
+      });
+
+      document.getElementById('btnPrint').addEventListener('click', () => {
+        prepareAndTriggerPrint();
+      });
+    }
+
+    // 渲染 A4 預覽畫布（總版面自動套用到各標籤）
+    function renderPreview() {
+      const canvas = document.getElementById('a4PreviewCanvas');
+      canvas.innerHTML = '';
+
+      const { cols, rows, width, height, marginLeft, marginTop, gapX, gapY, radius } = state.config;
+      const cellsPerPage = cols * rows;
+      const startCellIndex = Math.max(0, state.startCell - 1);
+      const pageStartIndex = (state.currentPage - 1) * cellsPerPage;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cellIndexInPage = r * cols + c;
+          const globalCellIndex = pageStartIndex + cellIndexInPage;
+          const dataIndex = globalCellIndex - startCellIndex;
+
+          const leftMm = marginLeft + c * (width + gapX) + state.offsetX;
+          const topMm = marginTop + r * (height + gapY) + state.offsetY;
+
+          const labelBox = document.createElement('div');
+          labelBox.className = 'absolute transition-all';
+          labelBox.style.width = `${width}mm`;
+          labelBox.style.height = `${height}mm`;
+          labelBox.style.left = `${leftMm}mm`;
+          labelBox.style.top = `${topMm}mm`;
+          labelBox.style.borderRadius = `${radius}mm`;
+          labelBox.style.backgroundColor = state.masterStyle.backgroundColor;
+          labelBox.style.boxSizing = 'border-box';
+          labelBox.style.overflow = 'hidden';
+
+          // 邊框樣式裝飾
+          applyDecoratedBorder(labelBox);
+
+          // 輔助切割格線
+          if (state.showBorder) {
+            labelBox.style.outline = '1px dashed #cbd5e1';
+          } else {
+            labelBox.style.outline = 'none';
+          }
+
+          if (globalCellIndex < startCellIndex) {
+            labelBox.style.backgroundColor = '#f1f5f9';
+            labelBox.innerHTML = `
+              <div class="h-full w-full flex items-center justify-center text-slate-300 text-xs font-mono select-none">
+                [跳過 第 ${cellIndexInPage + 1} 格]
+              </div>
+            `;
+          } else if (state.data.length > 0 && dataIndex >= 0 && dataIndex < state.data.length) {
+            buildMasterAppliedLabel(labelBox, state.data[dataIndex], `p_${state.currentPage}_r${r}_c${c}`);
+          } else if (state.data.length === 0 && globalCellIndex === startCellIndex) {
+            const dummy = { 單號: 'JL-DEMO-01', 收件人: '範例收件人', 電話: '0900-000-000', 郵遞區號: '244', 地址: '新北市林口區範例路1號', 備註: '示範標籤' };
+            buildMasterAppliedLabel(labelBox, dummy, `sample_preview`);
+          } else {
+            labelBox.innerHTML = `
+              <div class="h-full w-full flex items-center justify-center text-slate-200 text-[10px] font-mono select-none">
+                #${cellIndexInPage + 1}
+              </div>
+            `;
+          }
+
+          canvas.appendChild(labelBox);
+        }
+      }
+    }
+
+    // 依據總版面 (masterElements) 渲染出單格真實套用內容
+    function buildMasterAppliedLabel(container, record, uniqueKey) {
+      container.innerHTML = '';
+      container.style.position = 'absolute';
+
+      state.masterElements.forEach((el, idx) => {
+        const item = document.createElement('div');
+        item.style.position = 'absolute';
+        item.style.left = `${el.x}mm`;
+        item.style.top = `${el.y}mm`;
+        item.style.width = `${el.width}mm`;
+        item.style.height = `${el.height}mm`;
+        item.style.overflow = 'hidden';
+        item.style.boxSizing = 'border-box';
+
+        if (el.type === 'text') {
+          item.style.fontSize = `${el.fontSize}pt`;
+          item.style.fontWeight = el.bold ? '700' : '400';
+          item.style.textDecoration = el.underline ? 'underline' : 'none';
+          item.style.textAlign = el.align || 'left';
+          item.style.color = el.color || '#000000';
+          item.style.whiteSpace = 'pre-wrap';
+          item.style.lineHeight = '1.25';
+          item.innerText = replaceMergeTags(el.text, record);
+        } else if (el.type === 'image') {
+          const img = document.createElement('img');
+          img.src = el.src;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = el.lockRatio ? 'contain' : 'fill';
+          item.appendChild(img);
+        } else if (el.type === 'barcode') {
+          const barcodeVal = replaceMergeTags(el.field, record).trim();
+          if (barcodeVal) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            const svgId = `bc_${uniqueKey}_${idx}`;
+            svg.id = svgId;
+            svg.style.maxWidth = '100%';
+            svg.style.maxHeight = '100%';
+            item.className = 'flex justify-center items-center';
+            item.appendChild(svg);
+
+            setTimeout(() => {
+              try {
+                JsBarcode(`#${svgId}`, barcodeVal, {
+                  format: "CODE128",
+                  height: Math.max(16, el.height * 2.8),
+                  displayValue: el.showText !== false,
+                  fontSize: 9,
+                  margin: 0
+                });
+              } catch (e) {
+                console.warn('Barcode render error', e);
+              }
+            }, 0);
+          }
+        } else if (el.type === 'qr') {
+          const qrVal = replaceMergeTags(el.field, record).trim();
+          if (qrVal) {
+            const qrDiv = document.createElement('div');
+            const qrId = `qr_${uniqueKey}_${idx}`;
+            qrDiv.id = qrId;
+            item.className = 'flex justify-center items-center';
+            item.appendChild(qrDiv);
+
+            setTimeout(() => {
+              try {
+                const target = document.getElementById(qrId);
+                if (target) {
+                  target.innerHTML = '';
+                  // 計算像素
+                  const pxSize = Math.max(28, Math.round(Math.min(el.width, el.height) * 3.7));
+                  new QRCode(target, {
+                    text: qrVal,
+                    width: pxSize,
+                    height: pxSize,
+                    correctLevel: QRCode.CorrectLevel.M
+                  });
+                }
+              } catch (e) {
+                console.warn('QR render error', e);
+              }
+            }, 0);
+          }
+        }
+
+        container.appendChild(item);
+      });
+    }
+
+    function applyDecoratedBorder(dom) {
+      if (state.masterStyle.borderStyle === 'thin-solid') {
+        dom.style.border = '0.3mm solid #94a3b8';
+      } else if (state.masterStyle.borderStyle === 'double') {
+        dom.style.border = '0.8mm double #475569';
+      } else if (state.masterStyle.borderStyle === 'dashed') {
+        dom.style.border = '0.3mm dashed #64748b';
+      } else {
+        dom.style.border = 'none';
+      }
+    }
+
+    function replaceMergeTags(templateStr, record) {
+      if (!templateStr) return '';
+      return templateStr.replace(/\{([^}]+)\}/g, (match, fieldName) => {
+        if (record && record[fieldName] !== undefined) {
+          return record[fieldName];
+        }
+        return match;
+      });
+    }
+
+    /* =================== 7. 列印多頁產生與印表機呼叫 =================== */
+    function prepareAndTriggerPrint() {
+      const printContainer = document.getElementById('printContainer');
+      printContainer.innerHTML = '';
+
+      const { cols, rows, width, height, marginLeft, marginTop, gapX, gapY, radius } = state.config;
+      const cellsPerPage = cols * rows;
+      const startCellIndex = Math.max(0, state.startCell - 1);
+      const totalItems = state.data.length > 0 ? state.data.length : 1;
+      const totalPagesToPrint = Math.max(1, Math.ceil((totalItems + startCellIndex) / cellsPerPage));
+
+      for (let p = 0; p < totalPagesToPrint; p++) {
+        const pageSheet = document.createElement('div');
+        pageSheet.className = 'a4-print-sheet';
+
+        const pageStartIndex = p * cellsPerPage;
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const cellIndexInPage = r * cols + c;
+            const globalCellIndex = pageStartIndex + cellIndexInPage;
+            const dataIndex = globalCellIndex - startCellIndex;
+
+            const leftMm = marginLeft + c * (width + gapX) + state.offsetX;
+            const topMm = marginTop + r * (height + gapY) + state.offsetY;
+
+            const labelBox = document.createElement('div');
+            labelBox.style.position = 'absolute';
+            labelBox.style.width = `${width}mm`;
+            labelBox.style.height = `${height}mm`;
+            labelBox.style.left = `${leftMm}mm`;
+            labelBox.style.top = `${topMm}mm`;
+            labelBox.style.borderRadius = `${radius}mm`;
+            labelBox.style.backgroundColor = state.masterStyle.backgroundColor;
+            labelBox.style.boxSizing = 'border-box';
+            labelBox.style.overflow = 'hidden';
+
+            applyDecoratedBorder(labelBox);
+
+            if (state.printBorder) {
+              labelBox.style.outline = '0.2mm solid #cbd5e1';
+            }
+
+            if (globalCellIndex >= startCellIndex && dataIndex < totalItems) {
+              const currentRecord = state.data.length > 0 ? state.data[dataIndex] : {
+                單號: 'DEMO-001', 收件人: '林志豪 老師', 電話: '0912-345678', 郵遞區號: '244', 地址: '新北市林口區佳林路100號', 備註: '總務處'
+              };
+              buildMasterAppliedLabel(labelBox, currentRecord, `print_p${p}_r${r}_c${c}`);
+            }
+
+            pageSheet.appendChild(labelBox);
+          }
+        }
+
+        printContainer.appendChild(pageSheet);
+      }
+
+      setTimeout(() => {
+        window.print();
+      }, 350);
+    }
+
+    /* =================== 8. 輔助函式 =================== */
+    function showNotice(message, type = 'info') {
+      const existing = document.getElementById('appNoticeToast');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.id = 'appNoticeToast';
+      toast.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg shadow-xl text-xs font-semibold flex items-center gap-2 transition-all transform duration-200 ${
+        type === 'error' ? 'bg-rose-600 text-white' :
+        type === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-100'
+      }`;
+
+      const icon = type === 'error' ? 'fa-circle-exclamation' :
+                   type === 'success' ? 'fa-circle-check' : 'fa-circle-info';
+
+      toast.innerHTML = `<i class="fa-solid ${icon}"></i><span>${escapeHtml(message)}</span>`;
+      document.body.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    function copyTextToClipboard(text) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+      } catch (err) {
+        console.error('複製失敗', err);
+      }
+      document.body.removeChild(textArea);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
