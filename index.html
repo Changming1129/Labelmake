@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
     body {
       font-family: 'Noto Sans TC', system-ui, -apple-system, sans-serif;
@@ -38,6 +38,8 @@
       overflow: hidden;
       user-select: none;
       box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      transform-origin: center center;
+      transition: transform 0.1s ease-out;
       background-image: linear-gradient(45deg, #f8fafc 25%, transparent 25%), 
                         linear-gradient(-45deg, #f8fafc 25%, transparent 25%), 
                         linear-gradient(45deg, transparent 75%, #f8fafc 75%), 
@@ -386,21 +388,31 @@
 
           <!-- 可視化總版面畫布 (Master Visual Canvas) -->
           <div class="border border-slate-300 rounded-lg p-3 bg-slate-100 space-y-2">
-            <div class="flex items-center justify-between text-xs text-slate-600">
+            <div class="flex items-center justify-between text-xs text-slate-600 flex-wrap gap-2">
               <span class="font-bold flex items-center gap-1">
-                <i class="fa-solid fa-crosshairs text-indigo-500"></i> 總版面畫布 (拖曳移動 / 右下角拉伸縮放)
+                <i class="fa-solid fa-crosshairs text-indigo-500"></i> 總版面畫布 (<span id="masterCanvasDimensionText" class="code-font text-[11px] text-slate-500">99 × 67.7 mm</span>)
               </span>
-              <span id="masterCanvasDimensionText" class="code-font text-[11px] text-slate-500">99 × 67.7 mm</span>
+
+              <!-- 總版面獨立縮放工具列 -->
+              <div class="flex items-center gap-1 bg-white border border-slate-300 rounded-md px-1.5 py-0.5 shadow-sm text-xs">
+                <button id="btnMasterZoomOut" title="縮小畫布" class="w-5 h-5 rounded hover:bg-slate-100 flex items-center justify-center font-bold text-slate-600">-</button>
+                <span id="masterZoomText" class="w-10 text-center font-mono font-bold text-[11px] text-indigo-600">100%</span>
+                <button id="btnMasterZoomIn" title="放大畫布" class="w-5 h-5 rounded hover:bg-slate-100 flex items-center justify-center font-bold text-slate-600">+</button>
+                <div class="h-3 w-px bg-slate-200 mx-0.5"></div>
+                <button id="btnMasterZoom100" class="text-[10px] px-1 py-0.5 rounded hover:bg-slate-100 text-slate-600">1x</button>
+                <button id="btnMasterZoom150" class="text-[10px] px-1 py-0.5 rounded hover:bg-slate-100 text-slate-600">1.5x</button>
+                <button id="btnMasterZoom200" class="text-[10px] px-1 py-0.5 rounded hover:bg-slate-100 text-slate-600">2x</button>
+              </div>
             </div>
 
-            <!-- 畫布滾動外框 -->
-            <div class="overflow-auto bg-slate-200 p-3 rounded flex items-center justify-center min-h-[220px]">
+            <!-- 畫布滾動外框 (增加 min-h 與 overflow 方便放大檢視) -->
+            <div id="masterCanvasScrollContainer" class="overflow-auto bg-slate-200/90 p-4 rounded flex items-center justify-center min-h-[260px] max-h-[460px]">
               <!-- 總版面主畫布 (動態依標籤寬高等比縮放呈現) -->
-              <div id="masterEditorCanvas" class="border border-slate-400 rounded transition-all">
+              <div id="masterEditorCanvas" class="border border-slate-400 rounded">
                 <!-- 內部將由 JS 動態建立可拖曳、縮放之圖元 -->
               </div>
             </div>
-            <p class="text-[11px] text-slate-400 italic">提示：點選畫面中元件可於下方「屬性編輯」微調內容、顏色、底線與大小。</p>
+            <p class="text-[11px] text-slate-400 italic">提示：可使用右上角放大按鈕以 1.5x 或 2x 進行細節微調排版，拖曳右下藍點可縮放元件。</p>
           </div>
 
           <!-- 選定元件之屬性編輯器面板 -->
@@ -417,10 +429,10 @@
 
             <!-- 無選取時提示 -->
             <div id="noSelectionHint" class="text-xs text-slate-400 py-3 text-center">
-              請在上方總版面畫布中點選任一元件進行文字修改、字級設定、多行編輯或樣式微調。
+              請在上方總版面畫布中點選任一元件進行字型、字級、文字內容、多行編輯或樣式微調。
             </div>
 
-            <!-- 文字屬性專區 -->
+            <!-- 文字屬性專區 (含字型選擇器與自訂字型上傳) -->
             <div id="propTextControls" class="space-y-2.5 hidden">
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
@@ -428,6 +440,41 @@
                   <span class="text-[10px] text-indigo-600 font-normal">多行文字排版</span>
                 </label>
                 <textarea id="propTextInput" rows="3" class="w-full bg-white border border-slate-300 rounded p-2 text-xs focus:ring-1 focus:ring-indigo-500 whitespace-pre leading-relaxed" placeholder="輸入文字內容，支援按 Enter 換行"></textarea>
+              </div>
+
+              <!-- 字型選擇與上傳字型列 -->
+              <div class="bg-white border border-indigo-100 rounded-md p-2 space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label class="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <i class="fa-solid fa-font text-indigo-500"></i> 字型選擇 (Font Family)：
+                  </label>
+                  <!-- 自訂字型上傳按鈕 -->
+                  <label class="text-[10px] text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer flex items-center gap-1 transition">
+                    <i class="fa-solid fa-upload"></i> 上傳字型 (.ttf / .otf / .woff)
+                    <input type="file" id="propCustomFontUpload" accept=".ttf,.otf,.woff,.woff2" class="hidden">
+                  </label>
+                </div>
+                <select id="propFontFamily" class="w-full bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-indigo-500">
+                  <optgroup label="內建標準中文字型">
+                    <option value="'Noto Sans TC', sans-serif">思源黑體 (Noto Sans TC)</option>
+                    <option value="'Noto Serif TC', serif">思源宋體 / 明體 (Noto Serif TC)</option>
+                    <option value="'Microsoft JhengHei', '微軟正黑體', sans-serif">微軟正黑體 (Microsoft JhengHei)</option>
+                    <option value="'DFKai-SB', '標楷體', KaiTi, BiauKai, serif">標楷體 (DFKai-SB)</option>
+                    <option value="'PMingLiU', '新細明體', MingLiU, serif">新細明體 (PMingLiU)</option>
+                  </optgroup>
+                  <optgroup label="英數 / 條碼風格 / 等寬字型">
+                    <option value="'JetBrains Mono', monospace">JetBrains Mono (程式等寬字)</option>
+                    <option value="Arial, sans-serif">Arial (標準無襯線)</option>
+                    <option value="'Times New Roman', serif">Times New Roman (標準襯線)</option>
+                    <option value="'Impact', sans-serif">Impact (粗黑視覺)</option>
+                  </optgroup>
+                  <optgroup id="optgroupCustomFonts" label="★ 自訂上傳字型" disabled>
+                    <option value="" disabled>尚未上傳字型</option>
+                  </optgroup>
+                </select>
+                <div id="customFontNotice" class="text-[10px] text-emerald-600 hidden flex items-center gap-1">
+                  <i class="fa-solid fa-circle-check"></i> <span>已成功載入自訂字型</span>
+                </div>
               </div>
 
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
@@ -826,6 +873,8 @@
       printBorder: false,
       startCell: 1,
       zoom: 0.8,
+      masterZoom: 1.0, // 總版面獨立縮放倍率
+      customFonts: [], // 使用者上傳之自訂字型清單
       currentPage: 1,
       totalPages: 1,
       data: [],
@@ -855,6 +904,7 @@
           width: 74,
           height: 8,
           text: '新北市立佳林國民中學 總務處',
+          fontFamily: "'Noto Sans TC', sans-serif",
           fontSize: 10,
           bold: true,
           underline: false,
@@ -869,6 +919,7 @@
           width: 74,
           height: 16,
           text: '收件人：{收件人}\n聯絡電話：{電話}',
+          fontFamily: "'Noto Sans TC', sans-serif",
           fontSize: 11,
           bold: true,
           underline: false,
@@ -883,6 +934,7 @@
           width: 89,
           height: 14,
           text: '郵遞區號：{郵遞區號}\n收件地址：{地址}',
+          fontFamily: "'Noto Sans TC', sans-serif",
           fontSize: 9.5,
           bold: false,
           underline: false,
@@ -930,6 +982,7 @@
       setupTabSwitching();
       setupFormatInputs();
       setupMasterEditor();
+      setupMasterZoomControls();
       setupPropertyPanel();
       setupExcelImporter();
       setupZoomAndNavigation();
@@ -1053,8 +1106,31 @@
     }
 
     /* =================== 3. 總版面可視化編排器邏輯 =================== */
-    // 編輯器畫布縮放比例：1mm = 3.6px，便於高精確度滑鼠拖曳
+    // 編輯器畫布基準比例：1mm = 3.6px
     const MM_TO_PX = 3.6;
+
+    // 總版面縮放控制邏輯
+    function setupMasterZoomControls() {
+      const zoomText = document.getElementById('masterZoomText');
+      const applyMasterZoom = (z) => {
+        state.masterZoom = Math.min(Math.max(0.5, Math.round(z * 10) / 10), 3.0);
+        zoomText.innerText = `${Math.round(state.masterZoom * 100)}%`;
+        const editor = document.getElementById('masterEditorCanvas');
+        if (editor) {
+          editor.style.transform = `scale(${state.masterZoom})`;
+        }
+      };
+
+      document.getElementById('btnMasterZoomIn').addEventListener('click', () => {
+        applyMasterZoom(state.masterZoom + 0.2);
+      });
+      document.getElementById('btnMasterZoomOut').addEventListener('click', () => {
+        applyMasterZoom(state.masterZoom - 0.2);
+      });
+      document.getElementById('btnMasterZoom100').addEventListener('click', () => applyMasterZoom(1.0));
+      document.getElementById('btnMasterZoom150').addEventListener('click', () => applyMasterZoom(1.5));
+      document.getElementById('btnMasterZoom200').addEventListener('click', () => applyMasterZoom(2.0));
+    }
 
     function setupMasterEditor() {
       // 總版面背景色
@@ -1089,6 +1165,7 @@
           width: 50,
           height: 12,
           text: '請在此輸入文字\n支援換行與空格',
+          fontFamily: "'Noto Sans TC', sans-serif",
           fontSize: 10,
           bold: false,
           underline: false,
@@ -1126,7 +1203,7 @@
           showNotice('成功插入上傳圖片！', 'success');
         };
         reader.readAsDataURL(file);
-        e.target.value = ''; // 重設 input
+        e.target.value = '';
       });
 
       // 新增一維條碼
@@ -1184,9 +1261,9 @@
         state.masterStyle.borderStyle = 'none';
         state.masterElements = [
           { id: 'el_logo', type: 'image', x: 4, y: 4, width: 14, height: 14, src: JIALIN_LOGO_SVG, lockRatio: true },
-          { id: 'el_title', type: 'text', x: 20, y: 4, width: 74, height: 8, text: '新北市立佳林國民中學 總務處', fontSize: 10, bold: true, underline: false, color: '#1e3a8a', align: 'left' },
-          { id: 'el_recipient', type: 'text', x: 20, y: 11, width: 74, height: 16, text: '收件人：{收件人}\n聯絡電話：{電話}', fontSize: 11, bold: true, underline: false, color: '#0f172a', align: 'left' },
-          { id: 'el_address', type: 'text', x: 5, y: 28, width: 89, height: 14, text: '郵遞區號：{郵遞區號}\n收件地址：{地址}', fontSize: 9.5, bold: false, underline: false, color: '#334155', align: 'left' },
+          { id: 'el_title', type: 'text', x: 20, y: 4, width: 74, height: 8, text: '新北市立佳林國民中學 總務處', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 10, bold: true, underline: false, color: '#1e3a8a', align: 'left' },
+          { id: 'el_recipient', type: 'text', x: 20, y: 11, width: 74, height: 16, text: '收件人：{收件人}\n聯絡電話：{電話}', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 11, bold: true, underline: false, color: '#0f172a', align: 'left' },
+          { id: 'el_address', type: 'text', x: 5, y: 28, width: 89, height: 14, text: '郵遞區號：{郵遞區號}\n收件地址：{地址}', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 9.5, bold: false, underline: false, color: '#334155', align: 'left' },
           { id: 'el_barcode', type: 'barcode', x: 6, y: 44, width: 50, height: 18, field: '{單號}', showText: true },
           { id: 'el_qr', type: 'qr', x: 66, y: 44, width: 19, height: 19, field: '{單號}' }
         ];
@@ -1194,20 +1271,20 @@
         state.masterStyle.backgroundColor = '#f8fafc';
         state.masterStyle.borderStyle = 'thin-solid';
         state.masterElements = [
-          { id: 'el_title', type: 'text', x: 4, y: 3, width: 91, height: 8, text: '佳林國中 公物資產財產標籤', fontSize: 12, bold: true, underline: true, color: '#1e1b4b', align: 'center' },
-          { id: 'el_asset_num', type: 'text', x: 6, y: 14, width: 56, height: 14, text: '財產條碼：{單號}\n保管人：{收件人}\n放置地點：電腦教室二', fontSize: 9.5, bold: false, underline: false, color: '#1e293b', align: 'left' },
+          { id: 'el_title', type: 'text', x: 4, y: 3, width: 91, height: 8, text: '佳林國中 公物資產財產標籤', fontFamily: "'DFKai-SB', '標楷體', serif", fontSize: 12, bold: true, underline: true, color: '#1e1b4b', align: 'center' },
+          { id: 'el_asset_num', type: 'text', x: 6, y: 14, width: 56, height: 14, text: '財產條碼：{單號}\n保管人：{收件人}\n放置地點：電腦教室二', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 9.5, bold: false, underline: false, color: '#1e293b', align: 'left' },
           { id: 'el_qr', type: 'qr', x: 68, y: 14, width: 22, height: 22, field: 'https://jljh.ntpc.edu.tw/asset/{單號}' },
           { id: 'el_barcode', type: 'barcode', x: 6, y: 34, width: 87, height: 20, field: '{單號}', showText: true },
-          { id: 'el_footer', type: 'text', x: 4, y: 58, width: 91, height: 6, text: '※ 依校產管理要點妥善保管，未經許可切勿撕毀或移轉', fontSize: 8, bold: false, underline: false, color: '#64748b', align: 'center' }
+          { id: 'el_footer', type: 'text', x: 4, y: 58, width: 91, height: 6, text: '※ 依校產管理要點妥善保管，未經許可切勿撕毀或移轉', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 8, bold: false, underline: false, color: '#64748b', align: 'center' }
         ];
       } else if (type === 'student') {
         state.masterStyle.backgroundColor = '#eff6ff';
         state.masterStyle.borderStyle = 'double';
         state.masterElements = [
           { id: 'el_logo', type: 'image', x: 4, y: 4, width: 15, height: 15, src: JIALIN_LOGO_SVG, lockRatio: true },
-          { id: 'el_title', type: 'text', x: 22, y: 4, width: 72, height: 8, text: '佳林國中 學生通行證', fontSize: 11, bold: true, underline: false, color: '#1e3a8a', align: 'left' },
-          { id: 'el_sub', type: 'text', x: 22, y: 12, width: 72, height: 8, text: '姓名：{收件人}', fontSize: 12, bold: true, underline: true, color: '#0f172a', align: 'left' },
-          { id: 'el_info', type: 'text', x: 6, y: 24, width: 56, height: 16, text: '學號代碼：{單號}\n班級導師：{備註}', fontSize: 10, bold: false, underline: false, color: '#334155', align: 'left' },
+          { id: 'el_title', type: 'text', x: 22, y: 4, width: 72, height: 8, text: '佳林國中 學生通行證', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 11, bold: true, underline: false, color: '#1e3a8a', align: 'left' },
+          { id: 'el_sub', type: 'text', x: 22, y: 12, width: 72, height: 8, text: '姓名：{收件人}', fontFamily: "'Noto Serif TC', serif", fontSize: 12, bold: true, underline: true, color: '#0f172a', align: 'left' },
+          { id: 'el_info', type: 'text', x: 6, y: 24, width: 56, height: 16, text: '學號代碼：{單號}\n班級導師：{備註}', fontFamily: "'Noto Sans TC', sans-serif", fontSize: 10, bold: false, underline: false, color: '#334155', align: 'left' },
           { id: 'el_qr', type: 'qr', x: 66, y: 22, width: 24, height: 24, field: '{單號}' },
           { id: 'el_barcode', type: 'barcode', x: 10, y: 44, width: 79, height: 18, field: '{單號}', showText: true }
         ];
@@ -1233,6 +1310,7 @@
 
       editor.style.width = `${canvasPxW}px`;
       editor.style.height = `${canvasPxH}px`;
+      editor.style.transform = `scale(${state.masterZoom})`;
       editor.style.borderRadius = `${radius * MM_TO_PX * 0.4}px`;
       editor.style.backgroundColor = state.masterStyle.backgroundColor;
 
@@ -1280,6 +1358,7 @@
         innerContent.className = 'w-full h-full overflow-hidden pointer-events-none select-none';
 
         if (el.type === 'text') {
+          innerContent.style.fontFamily = el.fontFamily || "'Noto Sans TC', sans-serif";
           innerContent.style.fontSize = `${el.fontSize * 1.33}px`;
           innerContent.style.fontWeight = el.bold ? '700' : '400';
           innerContent.style.textDecoration = el.underline ? 'underline' : 'none';
@@ -1320,7 +1399,7 @@
       });
     }
 
-    // 綁定拖曳與縮放互動事件
+    // 綁定拖曳與縮放互動事件 (考量 masterZoom 縮放係數)
     function bindElementInteractions(dom, el, brHandle) {
       dom.addEventListener('mousedown', (e) => {
         if (e.target === brHandle) return; // 避免觸發拖曳
@@ -1336,8 +1415,10 @@
         let initialY = el.y;
 
         const onMouseMove = (moveEvent) => {
-          const deltaX = (moveEvent.clientX - startX) / MM_TO_PX;
-          const deltaY = (moveEvent.clientY - startY) / MM_TO_PX;
+          // 除以當前總版面縮放倍率，維持精準的 1:1 移動手感
+          const currentScale = state.masterZoom || 1.0;
+          const deltaX = (moveEvent.clientX - startX) / (MM_TO_PX * currentScale);
+          const deltaY = (moveEvent.clientY - startY) / (MM_TO_PX * currentScale);
 
           el.x = Math.max(0, Math.round((initialX + deltaX) * 2) / 2);
           el.y = Math.max(0, Math.round((initialY + deltaY) * 2) / 2);
@@ -1345,9 +1426,7 @@
           dom.style.left = `${el.x * MM_TO_PX}px`;
           dom.style.top = `${el.y * MM_TO_PX}px`;
 
-          // 同步幾何座標欄位
           syncGeometryInputs();
-          // 即時更新 A4 所有標籤
           renderPreview();
         };
 
@@ -1370,8 +1449,9 @@
         let ratio = initialW / initialH;
 
         const onMouseMove = (moveEvent) => {
-          let deltaW = (moveEvent.clientX - startX) / MM_TO_PX;
-          let deltaH = (moveEvent.clientY - startY) / MM_TO_PX;
+          const currentScale = state.masterZoom || 1.0;
+          let deltaW = (moveEvent.clientX - startX) / (MM_TO_PX * currentScale);
+          let deltaH = (moveEvent.clientY - startY) / (MM_TO_PX * currentScale);
 
           let newW = Math.max(5, Math.round((initialW + deltaW) * 2) / 2);
           let newH = Math.max(4, Math.round((initialH + deltaH) * 2) / 2);
@@ -1421,6 +1501,63 @@
           renderMasterEditor();
           renderPreview();
         }
+      });
+
+      // 字型選擇變更 (Font Family)
+      const propFontFamily = document.getElementById('propFontFamily');
+      propFontFamily.addEventListener('change', (e) => {
+        const el = getSelectedElement();
+        if (el && el.type === 'text') {
+          el.fontFamily = e.target.value;
+          renderMasterEditor();
+          renderPreview();
+        }
+      });
+
+      // 自訂字型上傳處理 (.ttf / .otf / .woff / .woff2)
+      const customFontUpload = document.getElementById('propCustomFontUpload');
+      customFontUpload.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const fontName = 'CustomFont_' + Date.now();
+        const displayLabel = file.name.replace(/\.[^/.]+$/, ""); // 去除副檔名
+
+        try {
+          const fontData = await file.arrayBuffer();
+          const fontFace = new FontFace(fontName, fontData);
+          await fontFace.load();
+          document.fonts.add(fontFace);
+
+          // 存入全域字型庫
+          state.customFonts.push({
+            name: fontName,
+            label: displayLabel
+          });
+
+          // 更新字型下拉選單
+          refreshFontSelectOptions(fontName);
+
+          // 自動套用至當前文字元件
+          const el = getSelectedElement();
+          if (el && el.type === 'text') {
+            el.fontFamily = `'${fontName}', sans-serif`;
+            propFontFamily.value = `'${fontName}', sans-serif`;
+            renderMasterEditor();
+            renderPreview();
+          }
+
+          const notice = document.getElementById('customFontNotice');
+          notice.classList.remove('hidden');
+          notice.querySelector('span').innerText = `已載入自訂字型：${displayLabel}`;
+          showNotice(`字型「${displayLabel}」載入成功！`, 'success');
+
+        } catch (err) {
+          console.error(err);
+          showNotice('字型檔解析失敗，請確認是否為標準 TTF/OTF/WOFF 格式', 'error');
+        }
+
+        e.target.value = '';
       });
 
       // 文字顏色
@@ -1534,6 +1671,28 @@
       });
     }
 
+    function refreshFontSelectOptions(selectedFontName = null) {
+      const optgroup = document.getElementById('optgroupCustomFonts');
+      if (!optgroup) return;
+
+      if (state.customFonts.length === 0) {
+        optgroup.disabled = true;
+        optgroup.innerHTML = '<option value="" disabled>尚未上傳字型</option>';
+      } else {
+        optgroup.disabled = false;
+        optgroup.innerHTML = '';
+        state.customFonts.forEach(font => {
+          const opt = document.createElement('option');
+          opt.value = `'${font.name}', sans-serif`;
+          opt.innerText = font.label;
+          if (selectedFontName && font.name === selectedFontName) {
+            opt.selected = true;
+          }
+          optgroup.appendChild(opt);
+        });
+      }
+    }
+
     function getSelectedElement() {
       if (!state.selectedElementId) return null;
       return state.masterElements.find(el => el.id === state.selectedElementId);
@@ -1578,6 +1737,11 @@
         document.getElementById('propTextBold').checked = !!el.bold;
         document.getElementById('propTextUnderline').checked = !!el.underline;
         document.getElementById('propTextAlign').value = el.align || 'left';
+        
+        // 同步字型選擇下拉選單
+        const fontSelect = document.getElementById('propFontFamily');
+        const curFont = el.fontFamily || "'Noto Sans TC', sans-serif";
+        fontSelect.value = curFont;
       } else if (el.type === 'image') {
         titleSpan.innerText = '編輯：插入圖片';
         textGroup.classList.add('hidden');
@@ -1874,7 +2038,7 @@
       }
     }
 
-    // 依據總版面 (masterElements) 渲染出單格真實套用內容
+    // 依據總版面 (masterElements) 渲染出單格真實套用內容 (包含字型設定)
     function buildMasterAppliedLabel(container, record, uniqueKey) {
       container.innerHTML = '';
       container.style.position = 'absolute';
@@ -1890,6 +2054,7 @@
         item.style.boxSizing = 'border-box';
 
         if (el.type === 'text') {
+          item.style.fontFamily = el.fontFamily || "'Noto Sans TC', sans-serif";
           item.style.fontSize = `${el.fontSize}pt`;
           item.style.fontWeight = el.bold ? '700' : '400';
           item.style.textDecoration = el.underline ? 'underline' : 'none';
@@ -1944,7 +2109,6 @@
                 const target = document.getElementById(qrId);
                 if (target) {
                   target.innerHTML = '';
-                  // 計算像素
                   const pxSize = Math.max(28, Math.round(Math.min(el.width, el.height) * 3.7));
                   new QRCode(target, {
                     text: qrVal,
